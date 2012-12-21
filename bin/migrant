@@ -1,0 +1,215 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use lib "lib";
+use Nifty::Migrant ();
+use Pod::Usage;
+use YAML::XS qw/LoadFile/;
+use DBI;
+use Getopt::Long;
+
+our %OPTIONS = (
+	env   => 'development',
+	db    => 'default',
+	dir   => 'db',
+	regen => 1,
+);
+Getopt::Long::Configure(qw/bundling/);
+GetOptions(\%OPTIONS,
+	'help|h|?',
+
+	'env|e=s',
+	'db=s',
+	'dir|d=s',
+
+	'regen!',
+
+	'noop|n',
+	'verbose|v',
+) or pod2usage(2);
+pod2usage(1) if $OPTIONS{help};
+
+sub next_version
+{
+	my $v = 0;
+	opendir my $dh, $OPTIONS{dir};
+	while (readdir($dh)) {
+		next unless -f "$OPTIONS{dir}/$_" and m/\.pl$/;
+		next unless m/^(\d+)/;
+		$v = $1 if $1 > $v;
+	}
+	closedir $dh;
+
+	return $v+1;
+}
+
+sub regen
+{
+	my ($config) = @_;
+	print ":: regen schema\n";
+	system("dbicdump -o dump_directory=./lib ".
+		"$config->{schema_class} $config->{dsn} ".
+		"-o exclude='^migrant_schema_'");
+	print ":: regen complete\n\n";
+}
+
+my $cmd = shift @ARGV
+	or pod2usage(2);
+pod2usage(1) if $cmd eq "help";
+
+for (@ARGV) {
+	my ($k,$v) = split /=/;
+	$ENV{$k} = $v if $k =~ m/^(version)$/i;
+}
+
+my $config = LoadFile("environments/$OPTIONS{env}.yml");
+$config = $config->{plugins}{DBIC}{$OPTIONS{db}}
+	or die "Failed to find $OPTIONS{db}/$OPTIONS{env} config\n";
+
+my $db = DBI->connect($config->{dsn},
+	$config->{user}, $config->{pass},
+	{ PrintWarn => 0, PrintError => 0 }) or
+		die "Failed to connect to $config->{dsn} as $config->{user}\n";
+
+$cmd =~ m/^(version|deploy|rollback|redo|new)$/i
+	or pod2usage("Invalid command '$cmd'");
+
+if ($cmd eq "version") {
+	my $v = Nifty::Migrant::version($db) || 0;
+	print "$v\n";
+	exit 0;
+}
+
+my %params = ();
+$params{$_} = $OPTIONS{$_} for qw/verbose noop dir/;
+
+if ($cmd eq "deploy") {
+	my $v = $ENV{VERSION};
+	Nifty::Migrant::run($db, $v, %params);
+	regen($config) if $OPTIONS{regen};
+	exit 0;
+}
+
+if ($cmd eq "rollback") {
+	my $v = -1;
+	$v = $ENV{VERSION} if exists $ENV{VERSION};
+
+	$params{relative} = 1 if $v < 0;
+	Nifty::Migrant::run($db, $v, %params);
+	regen($config) if $OPTIONS{regen};
+	exit 0;
+}
+
+if ($cmd eq "redo") {
+	Nifty::Migrant::run($db, -1, %params);
+	Nifty::Migrant::run($db, +1, %params);
+	regen($config) if $OPTIONS{regen};
+	exit 0;
+}
+
+if ($cmd eq "new") {
+	my $file = sprintf("%03i.%s.pl", next_version, shift @ARGV || "migrate");
+	open my $fh, ">", "$OPTIONS{dir}/$file";
+	print $fh <<EOF;
+use Nifty::Migrant;
+# $file
+
+###############################################################
+
+DEPLOY <<SQL;
+
+  -- put your SQL statements here! --
+
+SQL
+
+###############################################################
+
+ROLLBACK <<SQL;
+
+  -- put your SQL statements here! --
+
+SQL
+
+EOF
+	close $fh;
+	print "created $OPTIONS{dir}/$file\n";
+	exit 0;
+}
+
+=head1 NAME
+
+B<migrant> - Run Database Migrations
+
+=head1 SYNOPSIS
+
+B<migrant> -h
+
+B<migrant> (deploy|rollback) [VERSION=x]
+
+B<migrant> new [NAME]
+
+=head1 DESCRIPTION
+
+Nifty::Migrant is a lightweight Perl framework for managing schema
+migrations as a set of steps.  B<migrant> is the command-line utility for
+deploying, rolling back and creating new steps.
+
+=head1 DEPLOY AND ROLLBACK
+
+The B<deploy> and B<rollback> commands can be given a version to explicitly
+deploy or roll back to.  If not given, deploy will default to the latest
+version, and rollback will default to rolling back one version step.
+
+=head1 NEW MIGRATION
+
+The B<new> command will create a new migration step file, in the db/
+directory (see B<--dir>).  This file will have the next available version
+number, to ensure a linear progression through database changes.
+
+=head1 OPTIONS
+
+=over
+
+=item B<-e>, B<--env> environment
+
+Name of the Dancer environment to use when looking for the configuration
+file.  Defaults to I<development>.
+
+=item B<--db> key
+
+Name of the DBIx::Class schema to use from the configuration.
+
+Defaults to I<default>, which should work for most Dancer applications that
+use only one database.
+
+=item B<-d>, B<--dir> path/to/steps
+
+Path to the directory that stores the migration steps.
+
+Defaults to I<db/>.
+
+=item B<--regen>, B<--no-regen>
+
+Regenerate the DBIx::Class schema, based on the Dancer configuration.  By
+default, the schema files will be regenerated.  This behavior can be avoided
+with B<--no-regen>.
+
+=item B<--noop>
+
+Don't modify the database schema, but still run through all of the steps
+that would need to be called.
+
+=item B<--verbose>
+
+Display the SQL that will be run for each step.  Useful with eh B<--noop>
+option, for debugging.
+
+=back
+
+=head1 AUTHOR
+
+Written by James Hunt <james@niftylogic.com>
+
+=cut

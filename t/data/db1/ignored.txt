@@ -1,0 +1,3 @@
+#!/usr/bin/perl
+
+die "THIS SHOULD NOT BE RUN!\n";

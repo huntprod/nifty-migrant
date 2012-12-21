@@ -1,136 +1,354 @@
 package Nifty::Migrant;
-
-use 5.006;
 use strict;
 use warnings;
 
+use Time::HiRes qw/gettimeofday/;
+use Exporter ();
+use base 'Exporter';
+our @EXPORT = qw/DEPLOY ROLLBACK/;
+our $VERSION = "1.0.0";
+
+my $INFO = "migrant_schema_info";
+my %STEPS = ();
+
+sub parse_fname
+{
+	my ($file) = @_;
+	my $s = $file;
+	$s =~ s|.*/||;
+	return (int($1), $2) if $s =~ m/^(\d+)\.(.*).pl$/;
+	die "Failed to get schema version from '$file'\n";
+}
+
+sub register
+{
+	my ($number, $name, $deploy, $rollback) = @_;
+	$STEPS{$number} = {
+		this => int($number),
+		name => $name,
+	} unless exists $STEPS{$number};
+	$STEPS{$number}{deploy} = $deploy if $deploy;
+	$STEPS{$number}{rollback} = $rollback if $rollback;
+}
+
+sub clock(&)
+{
+	my ($sub) = @_;
+	my $start = gettimeofday;
+	$sub->();
+	printf "::   %0.3fs\n", gettimeofday - $start;
+}
+
+sub run_txn
+{
+	my ($db, $v, $sql) = @_;
+	$db->do("BEGIN TRANSACTION")
+		or die "Failed to start transaction: ".$db->errstr."\n";
+
+	for (split /;\n\s+/, $sql) {
+		s/--.*$//mg; s/\s+/ /mg;
+		s/^\s*//; s/\s*$//;
+		if (!$db->do($_)) {
+			my $e = $db->errstr;
+			$db->do("ROLLBACK TRANSACTION");
+			die "SQL '$_': $e\n";
+		}
+	}
+
+	my $st = $db->prepare("UPDATE $INFO SET version = ?");
+	if (!$st or !$st->execute($v)) {
+		my $e = $db->errstr;
+		$db->do("ROLLBACK TRANSACTION");
+		die "Failed to update schema version: $e\n";
+	}
+	$db->do("COMMIT TRANSACTION");
+}
+
+sub version
+{
+	my ($db) = @_;
+	my $st = $db->prepare("SELECT version FROM $INFO");
+	return unless $st and $st->execute;
+
+	my $t = $st->fetchrow_hashref;
+	return unless $t;
+	return int($t->{version});
+}
+
+sub run
+{
+	my ($db, $want, %opts) = @_;
+	$opts{dir} = "db" unless $opts{dir};
+
+	# load all the files
+	opendir my $DH, $opts{dir}
+		or die "Failed to list $opts{dir}/: $!\n";
+
+	while (readdir($DH)) {
+		next unless -f "$opts{dir}/$_" and m/\.pl/;
+		require "$opts{dir}/$_";
+	}
+	closedir $DH;
+
+	my $last = 0;
+	for (sort keys %STEPS) {
+		$STEPS{$_}{last} = $last;
+		$last = $STEPS{$_}{this};
+	}
+	undef $last;
+
+	my $current = version($db);
+	unless (defined $current) {
+		$current = 0;
+		unless ($opts{noop}) {
+			$db->do("CREATE TABLE $INFO (version INTEGER);")
+				or die "Failed to create $INFO table: ".$db->errstr."\n";
+			$db->do("INSERT INTO $INFO (version) VALUES (0);")
+				or die "Failed to set initial schema version: ".$db->errostr."\n";
+		}
+	}
+
+	# handle relative versions
+	if (defined($want)) {
+		$want += $current if $opts{relative} or $want < 0;
+		$want = 0 if $want < 0;
+	}
+
+	if (defined($want) and $current > $want) { # ROLLBACK!
+		print ":: rollback to $current..$want\n";
+		for (reverse sort keys %STEPS) {
+			# skip the stuff we haven't deployed yet
+			next if $_ > $current;
+
+			# stop if we passed our target version
+			last if $_ <= $want;
+
+			# run the rollback!
+			print STDERR "::   rollback $_.$STEPS{$_}{name}\n";
+			if ($opts{verbose}) {
+				print STDERR "-----------------------------------[ SQL ]------\n";
+				print $STEPS{$_}{rollback};
+				print STDERR "------------------------------------------------\n";
+			}
+			clock { run_txn($db, $STEPS{$_}{last}, $STEPS{$_}{rollback}) } unless $opts{noop};
+		}
+		print ":: rollback complete.\n\n";
+		return 0;
+
+	} else { # DEPLOY!
+		my $n = 0;
+		print ":: deploy $current..".(defined($want) ? $want : "latest")."\n";
+		for (sort keys %STEPS) {
+			# skip the stuff we've already deployed
+			next if $_ <= $current;
+
+			# stop if we passed our target version
+			last if defined($want) and $_ > $want;
+
+			# run the deploy!
+			$n++;
+			print STDERR "::   deploy $_.$STEPS{$_}{name}\n";
+			if ($opts{verbose}) {
+				print STDERR "-----------------------------------[ SQL ]------\n";
+				print $STEPS{$_}{deploy};
+				print STDERR "------------------------------------------------\n";
+			}
+			clock { run_txn($db, $STEPS{$_}{this}, $STEPS{$_}{deploy}) } unless $opts{noop};
+		}
+		if ($n == 0) {
+			print "Already at schema v$current\n";
+			return 0;
+		}
+		print ":: deploy complete.\n\n";
+	}
+}
+
+sub DEPLOY
+{
+	my ($sql) = @_;
+	(undef, my $file) = caller;
+	register(parse_fname($file), $sql, undef);
+}
+
+sub ROLLBACK
+{
+	my ($sql) = @_;
+	(undef, my $file) = caller;
+	register(parse_fname($file), undef, $sql);
+}
+
+1;
+
 =head1 NAME
 
-Nifty::Migrant - The great new Nifty::Migrant!
+Migrant - Database Migration, all Rails-y
 
-=head1 VERSION
+=head1 SUMMARY
 
-Version 0.01
+Migrant provides a framework and a utility for managing a
+single database schema as a set of migrations from one version
+to the next, similar to the Ruby on Rails environment.
 
-=cut
+It is focused on staying out of the way, while not letting you
+shoot yourself in the foot... too much.
 
-our $VERSION = '0.01';
+=head1 FEATURES
 
+=over
 
-=head1 SYNOPSIS
+=item The Power of SQL
 
-Quick summary of what the module does.
+Migration code is nothing more than a set of SQL statements
+that get executed in order to migrate, and another set of
+SQL statements to rollback.  Since you can use all of the SQL
+that your database backend supports, you can do data definition
+changes (CREATE / DROP TABLE) as well as data manipulation
+(SELECT / REPLACE INTO / UPDATE and friends).
 
-Perhaps a little code snippet.
+=item The Flexibility of DBI
 
-    use Nifty::Migrant;
+Built on a solid base of DBI, Migrant supports all the same
+database backends that your local DBI installation does.
 
-    my $foo = Nifty::Migrant->new();
-    ...
+=item A Lil' Somethin' Extra for the Dancers
 
-=head1 EXPORT
+Migrant is built to work with the Dancer configuration file
+format, and will figure out your DSN based on local configs.
 
-A list of functions that can be exported.  You can delete this section
-if you don't export anything, such as for a purely object-oriented module.
+=item Transactions
 
-=head1 SUBROUTINES/METHODS
-
-=head2 function1
-
-=cut
-
-sub function1 {
-}
-
-=head2 function2
-
-=cut
-
-sub function2 {
-}
-
-=head1 AUTHOR
-
-James Hunt, C<< <james at niftylogic.com> >>
-
-=head1 BUGS
-
-Please report any bugs or feature requests to C<bug-nifty-migrant at rt.cpan.org>, or through
-the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=Nifty-Migrant>.  I will be notified, and then you'll
-automatically be notified of progress on your bug as I make changes.
-
-
-
-
-=head1 SUPPORT
-
-You can find documentation for this module with the perldoc command.
-
-    perldoc Nifty::Migrant
-
-
-You can also look for information at:
-
-=over 4
-
-=item * RT: CPAN's request tracker (report bugs here)
-
-L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=Nifty-Migrant>
-
-=item * AnnoCPAN: Annotated CPAN documentation
-
-L<http://annocpan.org/dist/Nifty-Migrant>
-
-=item * CPAN Ratings
-
-L<http://cpanratings.perl.org/d/Nifty-Migrant>
-
-=item * Search CPAN
-
-L<http://search.cpan.org/dist/Nifty-Migrant/>
+Each step of a deploy / rollback is wrapped in a transaction,
+so if one of your SQL statements fails, the whole thing gets
+rolled back, to protect the integrity of schema version
+boundaries.
 
 =back
 
+=head1 MIGRATION STEPS
 
-=head1 ACKNOWLEDGEMENTS
+Migrant steps are pretty straightforward.  The template
+generated by a `migrant new ...` should be enough:
 
+    use Migrant;
+    # 002.example.pl
 
-=head1 LICENSE AND COPYRIGHT
+    ###############################################################
 
-Copyright 2012 James Hunt.
+    DEPLOY <<SQL;
 
-This program is distributed under the (Revised) BSD License:
-L<http://www.opensource.org/licenses/bsd-license.php>
+      -- put your SQL statements here! --
 
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions
-are met:
+    SQL
 
-* Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
+    ###############################################################
 
-* Redistributions in binary form must reproduce the above copyright
-notice, this list of conditions and the following disclaimer in the
-documentation and/or other materials provided with the distribution.
+    ROLLBACK <<SQL;
 
-* Neither the name of James Hunt's Organization
-nor the names of its contributors may be used to endorse or promote
-products derived from this software without specific prior written
-permission.
+      -- put your SQL statements here! --
 
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+    SQL
 
+The B<DEPLOY> and B<ROLLBACK> functions register sets of
+SQL statements to be run when this step (#2, 'example')
+is deployed or reverted.
+
+That's really all there is to it.  Cool, huh?
+
+=head1 PUBLIC API
+
+=head2 DEPLOY $SQL
+
+Register I<$SQL> (a string) as statements to be run when
+this step is deployed.  This is ignored outright during
+rollback.
+
+You should only have one call to B<DEPLOY> in each
+migration step.
+
+=head2 ROLLBACK $SQL
+
+Register I<$SQL> (a string) to be run when this step is
+rolled back.  This is ignored during deploy.
+
+You really only need one call to B<ROLLBACK> for each step.
+
+=head1 PRIVATE API
+
+These functions are used to implement the internal guts
+of Migrant, and are of no consequence to you unless you
+want to A) hack on Migrant or B) B<reallly> understand
+how it does what it does.
+
+=head2 parse_fname($file)
+
+Retrieve the step version and name of a step, as encoded
+in the filename.  By convention, Migrant treats file names
+in the form of NNN.zzz.pl as containing migration step
+#NNN and a name of 'zzz'.
+
+The step number and name will be returned as a list:
+
+  my ($n, $s) = parse_fname("004.test.pl");
+  # $n eq '004'
+  # $s eq 'test'
+
+parse_fname also handles full and relative path names:
+
+  my ($n, $str) = parse_fname("db/001.init.pl");
+  # $n = '001'
+  # $s = 'init'
+
+=head2 register($num, $name, $deploy_sql, $rollback_sql)
+
+Register deploy and rollback SQL with a named and numbered
+migration step.  This function rolls up the housekeeping
+necessary to populate the %STEPS hash appropriately.
+Subsequent calls will update an existing member of the STEPS
+hash.
+
+=head2 clock(\&code)
+
+Run the passed sub, and time how long it took.  The final
+time (in fractional seconds) will be printed to standard out.
+
+=head2 run_txn($dbh, $v, $sql)
+
+Runs B<$sql> against B<$dbh>, and update the internal schema
+version to be at version B<$v>.  All work is done inside of
+a transaction, and failures cause the transaction to be
+properly rolled back.
+
+=head2 version($dbh)
+
+Get the current schema version from B<$dbh>.
+
+=head2 run($dbh, $to_version, %opts)
+
+Run necessary migration steps (either deploy or rollback)
+until the schema reaches the wanted B<$to_version>.
+
+Takes the following options:
+
+=over
+
+=item B<dir>
+
+Directory that stores the migration files, relative to the
+current working directory.  Defaults to 'db/'.
+
+=item B<verbose>
+
+Print the SQL statements as they are run.
+
+=item B<noop>
+
+Don't run the actual SQL statement, just show what would be
+done based on current and desired schema versions.
+
+=back
+
+=head1 AUTHOR
+
+Written by James Hunt <james@niftylogic.com>
 
 =cut
-
-1; # End of Nifty::Migrant
