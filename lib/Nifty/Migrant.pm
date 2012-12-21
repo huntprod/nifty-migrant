@@ -36,7 +36,7 @@ sub clock(&)
 	my ($sub) = @_;
 	my $start = gettimeofday;
 	$sub->();
-	printf "::   %0.3fs\n", gettimeofday - $start;
+	printf "     --> %0.3fs\n", gettimeofday - $start;
 }
 
 sub run_txn
@@ -75,10 +75,21 @@ sub version
 	return int($t->{version});
 }
 
+sub vname
+{
+	my ($v) = @_;
+	return "latest" if ! defined $v;
+	return "v$v" if $v > 0;
+	return "initial";
+}
+
 sub run
 {
 	my ($db, $want, %opts) = @_;
 	$opts{dir} = "db" unless $opts{dir};
+
+	print STDERR "Running in NOOP mode... no database changes will be made\n"
+		if $opts{noop};
 
 	# load all the files
 	opendir my $DH, $opts{dir}
@@ -113,9 +124,11 @@ sub run
 		$want += $current if $opts{relative} or $want < 0;
 		$want = 0 if $want < 0;
 	}
+	my $final = $want;
 
+	my $noop = ($opts{noop} ? "[NOOP] " : "");
+	print ":: migrate from ".vname($current)." to ".vname($want)."\n";
 	if (defined($want) and $current > $want) { # ROLLBACK!
-		print ":: rollback to $current..$want\n";
 		for (reverse sort keys %STEPS) {
 			# skip the stuff we haven't deployed yet
 			next if $_ > $current;
@@ -124,20 +137,16 @@ sub run
 			last if $_ <= $want;
 
 			# run the rollback!
-			print STDERR "::   rollback $_.$STEPS{$_}{name}\n";
+			printf "::   %srollback %3i - %s\n", $noop, $_, $STEPS{$_}{name};
 			if ($opts{verbose}) {
 				print STDERR "-----------------------------------[ SQL ]------\n";
-				print $STEPS{$_}{rollback};
-				print STDERR "------------------------------------------------\n";
+				print STDERR $STEPS{$_}{rollback};
 			}
 			clock { run_txn($db, $STEPS{$_}{last}, $STEPS{$_}{rollback}) } unless $opts{noop};
 		}
-		print ":: rollback complete.\n\n";
-		return 0;
 
 	} else { # DEPLOY!
 		my $n = 0;
-		print ":: deploy $current..".(defined($want) ? $want : "latest")."\n";
 		for (sort keys %STEPS) {
 			# skip the stuff we've already deployed
 			next if $_ <= $current;
@@ -146,12 +155,12 @@ sub run
 			last if defined($want) and $_ > $want;
 
 			# run the deploy!
+			$final = $_;
 			$n++;
-			print STDERR "::   deploy $_.$STEPS{$_}{name}\n";
+			printf "::   %sdeploy %3i - %s\n", $noop, $_, $STEPS{$_}{name};
 			if ($opts{verbose}) {
 				print STDERR "-----------------------------------[ SQL ]------\n";
-				print $STEPS{$_}{deploy};
-				print STDERR "------------------------------------------------\n";
+				print STDERR $STEPS{$_}{deploy};
 			}
 			clock { run_txn($db, $STEPS{$_}{this}, $STEPS{$_}{deploy}) } unless $opts{noop};
 		}
@@ -159,7 +168,12 @@ sub run
 			print "Already at schema v$current\n";
 			return 0;
 		}
-		print ":: deploy complete.\n\n";
+	}
+	print ":: complete\n";
+	unless ($opts{noop}) {
+		my $vw = vname($want);
+		my $vf = vname($final);
+		print ":: current version: $vf".($vf ne $vw ? " ($vw)" : "")."\n";
 	}
 }
 
@@ -297,6 +311,11 @@ parse_fname also handles full and relative path names:
   my ($n, $str) = parse_fname("db/001.init.pl");
   # $n = '001'
   # $s = 'init'
+
+=head2 vname($version)
+
+Returns a printable version string, treating '0' as "initial"
+and undef as "latest".  This is used for the diagnostic output.
 
 =head2 register($num, $name, $deploy_sql, $rollback_sql)
 

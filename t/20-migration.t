@@ -6,17 +6,57 @@ use File::Temp qw/tempfile/;
 use DBI;
 
 BEGIN {
+	system("rm -rf t/tmp && mkdir t/tmp");
 	use_ok "Nifty::Migrant";
+}
+
+sub slurp
+{
+	my ($file) = @_;
+	open my $fh, $file or BAIL_OUT("slurp($file): $!");
+	my $stuff = do { local $/; <$fh> };
+	close $fh;
+	return $stuff;
+}
+
+sub is_output
+{
+	my ($actual, $expect) = @_;
+	$actual =~ s/--> \d\.\d+s/--> X.XXs/g;
+	$expect =~ s/--> \d\.\d+s/--> X.XXs/g;
+	is($actual, $expect);
+}
+
+sub stdout_is
+{
+	is_output(slurp("t/tmp/stdout"), shift);
+}
+
+sub stderr_is
+{
+	is_output(slurp("t/tmp/stderr"), shift);
 }
 
 sub eval_ok
 {
 	my ($code, $msg) = @_;
+
+	open my $stdout, ">&", \*STDOUT;
+	open my $stderr, ">&", \*STDERR;
+	open STDOUT, ">", "t/tmp/stdout";
+	open STDERR, ">", "t/tmp/stderr";
+
 	eval {
 		$code->();
+		open STDOUT, ">&", $stdout;
+		open STDERR, ">&", $stderr;
+
 		pass("$msg: did not die (as expected)");
 		1;
 	} or do {
+		open STDOUT, ">&", $stdout;
+		open STDERR, ">&", $stderr;
+
 		fail("$msg: died '$@'");
 	};
 }
@@ -28,11 +68,23 @@ sub eval_not_ok
 		$msg = $regex;
 		undef $regex;
 	}
+
+	open my $stdout, ">&", \*STDOUT;
+	open my $stderr, ">&", \*STDERR;
+	open STDOUT, ">", "t/tmp/stdout";
+	open STDERR, ">", "t/tmp/stderr";
+
 	eval {
 		$code->();
+		open STDOUT, ">&", $stdout;
+		open STDERR, ">&", $stderr;
+
 		fail("$msg: did not die");
 		1;
 	} or do {
+		open STDOUT, ">&", $stdout;
+		open STDERR, ">&", $stderr;
+
 		pass("$msg: died (as expected)");
 		like($@, $regex, "$msg: die message did not match") if $regex;
 	};
@@ -60,6 +112,16 @@ sub temp_db
 
 	eval_ok(sub { Nifty::Migrant::run($db, undef, dir => $DIR, noop => 1) },
 		"run(db, undef, noop => 1)");
+	stdout_is <<EOF;
+:: migrate from initial to latest
+::   [NOOP] deploy   1 - first
+::   [NOOP] deploy   2 - more-value
+::   [NOOP] deploy   4 - skip
+:: complete
+EOF
+	stderr_is <<EOF;
+Running in NOOP mode... no database changes will be made
+EOF
 	ok(!defined(Nifty::Migrant::version($db)),
 		"version number for empty DB after noop is undefined");
 
@@ -67,6 +129,57 @@ sub temp_db
 
 	eval_ok(sub { Nifty::Migrant::run($db, undef, dir => $DIR, verbose => 1) },
 		"run(db, undef, %params)");
+	stdout_is <<EOF;
+:: migrate from initial to latest
+::   deploy   1 - first
+     --> X.XXs
+::   deploy   2 - more-value
+     --> X.XXs
+::   deploy   4 - skip
+     --> X.XXs
+:: complete
+:: current version: v4 (latest)
+EOF
+	stderr_is <<EOF;
+-----------------------------------[ SQL ]------
+
+	CREATE TABLE sample (
+		id INTEGER PRIMARY KEY,
+		value VARCHAR(10)
+	);
+
+	INSERT INTO sample (id, value) VALUES (1, "value 1");
+	INSERT INTO sample (id, value) VALUES (2, "value 2");
+	INSERT INTO sample (id, value) VALUES (3, "value 3");
+	INSERT INTO sample (id, value) VALUES (4, "value 4");
+
+-----------------------------------[ SQL ]------
+
+	ALTER TABLE sample RENAME TO tmp_sample;
+
+	CREATE TABLE sample (
+		id INTEGER PRIMARY KEY,
+		value VARCHAR(010)
+	);
+
+	INSERT INTO sample (id, value)
+		SELECT id, value FROM tmp_sample;
+
+	DROP TABLE tmp_sample;
+
+-----------------------------------[ SQL ]------
+
+	CREATE TABLE customers (
+		id INTEGER PRIMARY KEY,
+		name  VARCHAR(200),
+		email VARCHAR(200),
+		notes TEXT,
+		class INTEGER
+	);
+
+	UPDATE sample SET value = "Second Value" WHERE id = 2;
+
+EOF
 	is(Nifty::Migrant::version($db), 4,
 		"run with no explicit version = deploy latest");
 
@@ -74,6 +187,15 @@ sub temp_db
 
 	eval_ok(sub { Nifty::Migrant::run($db, 1, dir => $DIR, noop => 1) },
 		"run(db, 1, noop => 1)");
+	stdout_is <<EOF;
+:: migrate from v4 to v1
+::   [NOOP] rollback   4 - skip
+::   [NOOP] rollback   2 - more-value
+:: complete
+EOF
+	stderr_is <<EOF;
+Running in NOOP mode... no database changes will be made
+EOF
 	is(Nifty::Migrant::version($db), 4,
 		"run(v1) still at v4 after noop rollback");
 
@@ -81,6 +203,37 @@ sub temp_db
 
 	eval_ok(sub { Nifty::Migrant::run($db, 1, dir => $DIR, verbose => 1) },
 		"run(db, 1, %params)");
+	stdout_is <<EOF;
+:: migrate from v4 to v1
+::   rollback   4 - skip
+     --> X.XXs
+::   rollback   2 - more-value
+     --> X.XXs
+:: complete
+:: current version: v1
+EOF
+	stderr_is <<EOF;
+-----------------------------------[ SQL ]------
+
+	UPDATE sample SET value = "value 2" WHERE id = 2;
+
+	DROP TABLE customers;
+
+-----------------------------------[ SQL ]------
+
+	ALTER TABLE sample RENAME TO tmp_sample;
+
+	CREATE TABLE sample (
+		id INTEGER PRIMARY KEY,
+		value VARCHAR(10)
+	);
+
+	INSERT INTO sample (id, value)
+		SELECT id, value FROM tmp_sample;
+
+	DROP TABLE tmp_sample;
+
+EOF
 	is(Nifty::Migrant::version($db), 1,
 		"run(v1) rolls back from v4 to v1");
 
@@ -88,6 +241,14 @@ sub temp_db
 
 	eval_ok(sub { Nifty::Migrant::run($db, 1, dir => $DIR, relative => 1) },
 		"run(db, 1, relative => 1)");
+	stdout_is <<EOF;
+:: migrate from v1 to v2
+::   deploy   2 - more-value
+     --> X.XXs
+:: complete
+:: current version: v2
+EOF
+	stderr_is '';
 	is(Nifty::Migrant::version($db), 2,
 		"run(+1) deploys v1 to v2");
 
@@ -95,6 +256,14 @@ sub temp_db
 
 	eval_ok(sub { Nifty::Migrant::run($db, -1, dir => $DIR, relative => 1) },
 		"run(db, -1, relative => 1)");
+	stdout_is <<EOF;
+:: migrate from v2 to v1
+::   rollback   2 - more-value
+     --> X.XXs
+:: complete
+:: current version: v1
+EOF
+	stderr_is '';
 	is(Nifty::Migrant::version($db), 1,
 		"run(-1) rolls back v2 to v1");
 
