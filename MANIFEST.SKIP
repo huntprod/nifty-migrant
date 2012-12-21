@@ -1,0 +1,4 @@
+^\.git
+\.bak$
+cover_db/.*
+\.tar\.(gz|bz2)$
