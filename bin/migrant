@@ -61,7 +61,7 @@ pod2usage(1) if $cmd eq "help";
 
 for (@ARGV) {
 	my ($k,$v) = split /=/;
-	$ENV{$k} = $v if $k =~ m/^(version)$/i;
+	$ENV{uc $k} = $v if $k =~ m/^(version)$/i;
 }
 
 my $config = LoadFile("environments/$OPTIONS{env}.yml");
