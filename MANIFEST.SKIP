@@ -1,5 +1,6 @@
 ^\.git
 \.bak$
+_build
 cover_db/.*
 \.tar\.(gz|bz2)$
 MYMETA.(yml|json)$
