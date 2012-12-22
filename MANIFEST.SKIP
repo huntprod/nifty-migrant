@@ -3,3 +3,6 @@
 cover_db/.*
 \.tar\.(gz|bz2)$
 MYMETA.(yml|json)$
+^_build/.*
+^blib/.*
+^Build$
