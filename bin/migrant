@@ -71,7 +71,7 @@ $config = $config->{plugins}{DBIC}{$OPTIONS{db}}
 my $db = DBI->connect($config->{dsn},
 	$config->{user}, $config->{pass},
 	{ PrintWarn => 0, PrintError => 0 }) or
-		die "Failed to connect to $config->{dsn} as $config->{user}\n";
+		die "Failed to connect to $config->{dsn}\n";
 
 $cmd =~ m/^(version|deploy|rollback|redo|new)$/i
 	or pod2usage("Invalid command '$cmd'");
