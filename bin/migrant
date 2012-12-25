@@ -103,6 +103,7 @@ if ($cmd eq "rollback") {
 }
 
 if ($cmd eq "redo") {
+	$params{relative} = 1;
 	Nifty::Migrant::run($db, -1, %params);
 	Nifty::Migrant::run($db, +1, %params);
 	regen($config) if $OPTIONS{regen};
