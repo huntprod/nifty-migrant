@@ -5,24 +5,25 @@ use warnings;
 
 use lib "lib";
 use Nifty::Migrant ();
+use Nifty::Migrant::Config;
 use Pod::Usage;
 use YAML::XS qw/LoadFile/;
 use DBI;
 use Getopt::Long;
 
 our %OPTIONS = (
-	env   => 'development',
-	db    => 'default',
-	dir   => 'db',
-	regen => 1,
+	config  => '/etc/migrant.yml',
+	project => 'DEVEL',
+	env     => 'development',
+	regen   => 1,
 );
 Getopt::Long::Configure(qw/bundling/);
 GetOptions(\%OPTIONS,
 	'help|h|?',
 
+	'config|c=s',
+	'project|p=s',
 	'env|e=s',
-	'db=s',
-	'dir|d=s',
 
 	'regen!',
 
@@ -33,10 +34,11 @@ pod2usage(1) if $OPTIONS{help};
 
 sub next_version
 {
+	my ($dir) = @_;
 	my $v = 0;
-	opendir my $dh, $OPTIONS{dir};
+	opendir my $dh, $dir;
 	while (readdir($dh)) {
-		next unless -f "$OPTIONS{dir}/$_" and m/\.pl$/;
+		next unless -f "$dir/$_" and m/\.pl$/;
 		next unless m/^(\d+)/;
 		$v = $1 if $1 > $v;
 	}
@@ -64,14 +66,21 @@ for (@ARGV) {
 	$ENV{uc $k} = $v if $k =~ m/^(version)$/i;
 }
 
-my $config = LoadFile("environments/$OPTIONS{env}.yml");
-$config = $config->{plugins}{DBIC}{$OPTIONS{db}}
-	or die "Failed to find $OPTIONS{db}/$OPTIONS{env} config\n";
+my $config = Nifty::Migrant::Config->read($OPTIONS{config})
+	or die "Failed to parse config ($OPTIONS{config}): $!\n";
+$config->project($OPTIONS{project});
+$config->environment($OPTIONS{env});
 
-my $db = DBI->connect($config->{dsn},
-	$config->{user}, $config->{pass},
+my $dbname = $config->get('database')      || 'default');
+my $file   = $config->get('configuration') || "environments/$OPTIONS{env}.yml";
+my $appdb = LoadFile($file);
+$appdb = $appdb->{plugins}{DBIC}{$dbname}
+	or die "Failed to find $dbname/$OPTIONS{env} config\n";
+
+my $db = DBI->connect($appdb->{dsn},
+	$appdb->{user}, $appdb->{pass},
 	{ PrintWarn => 0, PrintError => 0 }) or
-		die "Failed to connect to $config->{dsn}\n";
+		die "Failed to connect to $appdb->{dsn}\n";
 
 $cmd =~ m/^(version|deploy|rollback|redo|new)$/i
 	or pod2usage("Invalid command '$cmd'");
@@ -83,12 +92,13 @@ if ($cmd eq "version") {
 }
 
 my %params = ();
-$params{$_} = $OPTIONS{$_} for qw/verbose noop dir/;
+$params{$_} = $OPTIONS{$_} for qw/verbose noop/;
+$params{dir} = $config->get('migrations') || 'db';
 
 if ($cmd eq "deploy") {
 	my $v = $ENV{VERSION};
 	Nifty::Migrant::run($db, $v, %params);
-	regen($config) if $OPTIONS{regen};
+	regen($appdb) if $OPTIONS{regen};
 	exit 0;
 }
 
@@ -98,7 +108,7 @@ if ($cmd eq "rollback") {
 
 	$params{relative} = 1 if $v < 0;
 	Nifty::Migrant::run($db, $v, %params);
-	regen($config) if $OPTIONS{regen};
+	regen($appdb) if $OPTIONS{regen};
 	exit 0;
 }
 
@@ -106,12 +116,12 @@ if ($cmd eq "redo") {
 	$params{relative} = 1;
 	Nifty::Migrant::run($db, -1, %params);
 	Nifty::Migrant::run($db, +1, %params);
-	regen($config) if $OPTIONS{regen};
+	regen($appdb) if $OPTIONS{regen};
 	exit 0;
 }
 
 if ($cmd eq "new") {
-	my $file = sprintf("%03i.%s.pl", next_version, shift @ARGV || "migrate");
+	my $file = sprintf("%03i.%s.pl", next_version($params{dir}), shift @ARGV || "migrate");
 	open my $fh, ">", "$OPTIONS{dir}/$file";
 	print $fh <<EOF;
 use Nifty::Migrant;
