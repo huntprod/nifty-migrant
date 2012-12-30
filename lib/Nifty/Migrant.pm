@@ -95,9 +95,10 @@ sub run
 	opendir my $DH, $opts{dir}
 		or die "Failed to list $opts{dir}/: $!\n";
 
+	%STEPS = ();
 	while (readdir($DH)) {
 		next unless -f "$opts{dir}/$_" and m/\.pl/;
-		require "$opts{dir}/$_";
+		do "$opts{dir}/$_";
 	}
 	closedir $DH;
 
@@ -106,10 +107,13 @@ sub run
 		$STEPS{$_}{last} = $last;
 		$last = $STEPS{$_}{this};
 	}
-	undef $last;
 
 	my $current = version($db);
-	unless (defined $current) {
+	if (defined $current) {
+		# sanity check against current version
+		die "Database is at v$current; but migrations stop at v$last\n"
+			if $current > $last;
+	} else {
 		$current = 0;
 		unless ($opts{noop}) {
 			$db->do("CREATE TABLE $INFO (version INTEGER);")
@@ -118,6 +122,7 @@ sub run
 				or die "Failed to set initial schema version: ".$db->errostr."\n";
 		}
 	}
+	undef $last;
 
 	# handle relative versions
 	if (defined($want)) {

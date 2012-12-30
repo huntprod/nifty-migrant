@@ -368,4 +368,27 @@ EOF
 		"empty migrant_schema_info table -> undefined version");
 }
 
+{ # tool-19: what if the database is at v3, but we only
+  # have v1 and v2 defined on-disk
+
+	qx(rm -rf t/tmp/db1; /bin/cp -a t/data/db1 t/tmp/db1);
+
+	my $DIR = "t/tmp/db1";
+	my $db = temp_db;
+	ok(!defined(Nifty::Migrant::version($db)),
+		"new database has undefined schema version");
+
+	eval_ok(sub { Nifty::Migrant::run($db, undef, dir => $DIR) },
+		"migrate to v4");
+	is(Nifty::Migrant::version($db), 4, "migrated to v4");
+
+	# delete the v4 migration
+	unlink "t/tmp/db1/004.skip.pl";
+
+	eval_not_ok(sub { Nifty::Migrant::run($db, 1, dir => $DIR) },
+		qr/^Database is at v4; but migrations stop at v2$/,
+		"rollback to v1 (which should fail)");
+	is(Nifty::Migrant::version($db), 4, "still at v4");
+}
+
 done_testing;
