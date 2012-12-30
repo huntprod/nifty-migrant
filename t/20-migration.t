@@ -153,6 +153,7 @@ EOF
 	INSERT INTO sample (id, value) VALUES (3, "value 3");
 	INSERT INTO sample (id, value) VALUES (4, "value 4");
 
+------------------------------------------------
 -----------------------------------[ SQL ]------
 
 	ALTER TABLE sample RENAME TO tmp_sample;
@@ -167,6 +168,7 @@ EOF
 
 	DROP TABLE tmp_sample;
 
+------------------------------------------------
 -----------------------------------[ SQL ]------
 
 	CREATE TABLE customers (
@@ -179,6 +181,7 @@ EOF
 
 	UPDATE sample SET value = "Second Value" WHERE id = 2;
 
+------------------------------------------------
 EOF
 	is(Nifty::Migrant::version($db), 4,
 		"run with no explicit version = deploy latest");
@@ -219,6 +222,7 @@ EOF
 
 	DROP TABLE customers;
 
+------------------------------------------------
 -----------------------------------[ SQL ]------
 
 	ALTER TABLE sample RENAME TO tmp_sample;
@@ -233,6 +237,7 @@ EOF
 
 	DROP TABLE tmp_sample;
 
+------------------------------------------------
 EOF
 	is(Nifty::Migrant::version($db), 1,
 		"run(v1) rolls back from v4 to v1");

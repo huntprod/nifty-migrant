@@ -141,6 +141,7 @@ sub run
 			if ($opts{verbose}) {
 				print STDERR "-----------------------------------[ SQL ]------\n";
 				print STDERR $STEPS{$_}{rollback};
+				print STDERR "------------------------------------------------\n";
 			}
 			clock { run_txn($db, $STEPS{$_}{last}, $STEPS{$_}{rollback}) } unless $opts{noop};
 		}
@@ -161,6 +162,7 @@ sub run
 			if ($opts{verbose}) {
 				print STDERR "-----------------------------------[ SQL ]------\n";
 				print STDERR $STEPS{$_}{deploy};
+				print STDERR "------------------------------------------------\n";
 			}
 			clock { run_txn($db, $STEPS{$_}{this}, $STEPS{$_}{deploy}) } unless $opts{noop};
 		}

@@ -13,9 +13,8 @@ use Getopt::Long;
 
 our %OPTIONS = (
 	config  => '/etc/migrant.yml',
-	project => 'DEVEL',
-	env     => 'development',
-	regen   => 1,
+	project => $ENV{MIGRANT_PROJECT} || 'DEVEL',
+	env     => $ENV{MIGRANT_ENV}     || 'development',
 );
 Getopt::Long::Configure(qw/bundling/);
 GetOptions(\%OPTIONS,
@@ -36,7 +35,7 @@ sub next_version
 {
 	my ($dir) = @_;
 	my $v = 0;
-	opendir my $dh, $dir;
+	opendir((my $dh), $dir);
 	while (readdir($dh)) {
 		next unless -f "$dir/$_" and m/\.pl$/;
 		next unless m/^(\d+)/;
@@ -45,6 +44,11 @@ sub next_version
 	closedir $dh;
 
 	return $v+1;
+}
+
+sub vprint
+{
+	printf STDERR @_ if $OPTIONS{verbose};
 }
 
 sub regen
@@ -66,17 +70,34 @@ for (@ARGV) {
 	$ENV{uc $k} = $v if $k =~ m/^(version)$/i;
 }
 
+vprint "Reading configuration from $OPTIONS{config}\n";
 my $config = Nifty::Migrant::Config->read($OPTIONS{config})
 	or die "Failed to parse config ($OPTIONS{config}): $!\n";
 $config->project($OPTIONS{project});
 $config->environment($OPTIONS{env});
 
-my $dbname = $config->get('database')      || 'default');
-my $file   = $config->get('configuration') || "environments/$OPTIONS{env}.yml";
-my $appdb = LoadFile($file);
-$appdb = $appdb->{plugins}{DBIC}{$dbname}
-	or die "Failed to find $dbname/$OPTIONS{env} config\n";
+$OPTIONS{database}   = $config->get('database')      || 'default';
+$OPTIONS{dir}        = $config->get('migrations')    || 'db';
+$OPTIONS{appconfig}  = $config->get('configuration') ||
+                         "environments/$OPTIONS{env}.yml";
+if ($OPTIONS{regen} and $config->project eq 'DEVEL') {
+	$OPTIONS{regen} = 1;
+}
 
+my %params = ();
+$params{$_} = $OPTIONS{$_} for qw/verbose noop dir/;
+
+vprint "Using ".$config->project."/".$config->environment."\n";
+vprint "  configuration: $OPTIONS{appconfig}\n";
+vprint "  database:      $OPTIONS{database}\n";
+vprint "  migrations:    $OPTIONS{dir}\n";
+vprint "  regen schema:  ".($OPTIONS{regen} ? 'yes' : 'no')."\n\n";
+
+my $appdb = LoadFile($OPTIONS{appconfig});
+$appdb = $appdb->{plugins}{DBIC}{$OPTIONS{database}}
+	or die "Failed to find $OPTIONS{database}/$OPTIONS{env} config\n";
+
+vprint "Connecting to $appdb->{dsn}\n";
 my $db = DBI->connect($appdb->{dsn},
 	$appdb->{user}, $appdb->{pass},
 	{ PrintWarn => 0, PrintError => 0 }) or
@@ -84,16 +105,13 @@ my $db = DBI->connect($appdb->{dsn},
 
 $cmd =~ m/^(version|deploy|rollback|redo|new)$/i
 	or pod2usage("Invalid command '$cmd'");
+vprint "Running command $cmd\n";
 
 if ($cmd eq "version") {
 	my $v = Nifty::Migrant::version($db) || 0;
 	print "$v\n";
 	exit 0;
 }
-
-my %params = ();
-$params{$_} = $OPTIONS{$_} for qw/verbose noop/;
-$params{dir} = $config->get('migrations') || 'db';
 
 if ($cmd eq "deploy") {
 	my $v = $ENV{VERSION};
@@ -183,29 +201,29 @@ number, to ensure a linear progression through database changes.
 
 =over
 
+=item B<-p>, B<--project> project
+
+Name of the project to run migrations for.  Used as a key into the global
+migrant configuration file.
+
+If not specified, the $MIGRANT_PROJECT environment variable is used.  If
+that is not set, a default of I<DEVEL> is used.
+
 =item B<-e>, B<--env> environment
 
 Name of the Dancer environment to use when looking for the configuration
-file.  Defaults to I<development>.
-
-=item B<--db> key
-
-Name of the DBIx::Class schema to use from the configuration.
-
-Defaults to I<default>, which should work for most Dancer applications that
-use only one database.
-
-=item B<-d>, B<--dir> path/to/steps
-
-Path to the directory that stores the migration steps.
-
-Defaults to I<db/>.
+file.  If not specified, the $MIGRANT_ENVIRONMENT environment variable is
+used.  If that is not set, defaults to I<development>.
 
 =item B<--regen>, B<--no-regen>
 
 Regenerate the DBIx::Class schema, based on the Dancer configuration.  By
-default, the schema files will be regenerated.  This behavior can be avoided
-with B<--no-regen>.
+default, the schema files will be regenerated for development environments.
+This behavior can be avoided with B<--no-regen>.
+
+=item B<-c>, B<--config> /path/to/config.yml
+
+Path to the migrant configuration.  Defaults to I</etc/migrant.yml>.
 
 =item B<--noop>
 
