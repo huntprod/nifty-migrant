@@ -1,0 +1,7 @@
+myproj:
+  migrations: /usr/share/myproj/db
+  config:     /etc/myproj/config.yml
+
+DEVEL:
+  migrations: ./db/
+  config:     ./environments/%s.yml
