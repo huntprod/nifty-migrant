@@ -12,3 +12,5 @@ pod2htm*.tmp
 Nifty-Migrant-*
 *.bak
 MYMETA.*
+MANIFEST
+debian/changelog
