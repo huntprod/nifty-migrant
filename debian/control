@@ -1,0 +1,15 @@
+Source: libnifty-migrant-perl
+Maintainer: Package Monkey <packages@niftylogic.com>
+Section: perl
+Priority: optional
+Homepage: http://packages.niftylogic.com/perl/Nifty-Migrant
+Build-Depends: debhelper (>= 8), perl, perl-modules, perl-base, libdbi-perl, libyaml-perl, libyaml-libyaml-perl, libpod-coverage-perl, libtest-pod-coverage-perl
+Standards-Version: 3.9.3
+
+Depends: perl, perl-modules, perl-base, libdbi-perl, libyaml-perl, libyaml-libyaml-perl
+Description: Database Migration, all Rails-y
+Package: libnifty-migrant-perl
+Architecture: all
+
+#Version: 1.0.2-23
+#Installed-Size: 51
