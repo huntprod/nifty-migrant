@@ -13,7 +13,12 @@ my $builder = Module::Build->new(
 	build_requires => {
 		'Test::More'    => 0,
 	},
-	add_to_cleanup      => [ 'Nifty-Migrant-*' ]
+	add_to_cleanup      => [
+		'Nifty-Migrant-*',
+		'cover_db',
+		'*.rpm',
+		'*.deb',
+	]
 );
 
 $builder->create_build_script();

@@ -14,3 +14,5 @@ Nifty-Migrant-*
 MYMETA.*
 MANIFEST
 debian/changelog
+META.json
+META.yml
