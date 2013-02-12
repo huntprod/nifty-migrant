@@ -15,7 +15,7 @@ my $builder = Module::Build->new(
 	},
 	add_to_cleanup      => [
 		'Nifty-Migrant-*',
-		#	'cover_db',
+		'cover_db',
 		'*.rpm',
 		'*.deb',
 	]
