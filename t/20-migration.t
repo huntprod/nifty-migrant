@@ -318,7 +318,7 @@ EOF
 	#### v1
 
 	eval_not_ok(sub { Nifty::Migrant::run($db, 2, dir => $DIR) },
-		qr/no such table: migrant_schema_info\n$/,
+		qr/no such table: migrant_schema_info at $0 line \d+\n$/,
 		"run(db, 2, %params)");
 	is(Nifty::Migrant::version($db), 1,
 		"run(2) fails by messing with migrant_schema_info");
@@ -331,7 +331,7 @@ EOF
 
 	# default dir should fail
 	eval_not_ok(sub { Nifty::Migrant::run($db) },
-		qr/failed to list db\/: no such file or directory/i,
+		qr/failed to list db\/: no such file or directory at $0 line \d+/i,
 		"run(db) with invalid default directory");
 }
 
@@ -352,7 +352,7 @@ EOF
 	#### v1
 
 	eval_not_ok(sub { Nifty::Migrant::run($db, 2, dir => $DIR) },
-		qr/SQL 'CREAT TABLE .*: syntax error\n$/,
+		qr/SQL 'CREAT TABLE .*: syntax error at $0 line \d+\n$/,
 		"run(db, 2, %params)");
 	is(Nifty::Migrant::version($db), 1,
 		"run(2) fails due to bad SQL");
@@ -391,7 +391,7 @@ EOF
 	unlink "t/tmp/db1/004.skip.pl";
 
 	eval_not_ok(sub { Nifty::Migrant::run($db, 1, dir => $DIR) },
-		qr/^Database is at v4; but migrations stop at v2$/,
+		qr/^Database is at v4; but migrations stop at v2 at $0 line \d+$/,
 		"rollback to v1 (which should fail)");
 	is(Nifty::Migrant::version($db), 4, "still at v4");
 }

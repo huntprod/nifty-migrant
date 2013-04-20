@@ -2,6 +2,7 @@ package Nifty::Migrant;
 use strict;
 use warnings;
 
+use Carp;
 use Time::HiRes qw/gettimeofday/;
 use Exporter ();
 use base 'Exporter';
@@ -17,7 +18,7 @@ sub parse_fname
 	my $s = $file;
 	$s =~ s|.*/||;
 	return (int($1), $2) if $s =~ m/^(\d+)\.(.*).pl$/;
-	die "Failed to get schema version from '$file'\n";
+	croak "Failed to get schema version from '$file'";
 }
 
 sub register
@@ -43,7 +44,7 @@ sub run_txn
 {
 	my ($db, $v, $sql) = @_;
 	$db->do("BEGIN TRANSACTION")
-		or die "Failed to start transaction: ".$db->errstr."\n";
+		or croak "Failed to start transaction: ".$db->errstr;
 
 	for (split /;\n\s+/, $sql) {
 		s/--.*$//mg; s/\s+/ /mg;
@@ -51,7 +52,7 @@ sub run_txn
 		if (!$db->do($_)) {
 			my $e = $db->errstr;
 			$db->do("ROLLBACK TRANSACTION");
-			die "SQL '$_': $e\n";
+			croak "SQL '$_': $e";
 		}
 	}
 
@@ -59,7 +60,7 @@ sub run_txn
 	if (!$st or !$st->execute($v)) {
 		my $e = $db->errstr;
 		$db->do("ROLLBACK TRANSACTION");
-		die "Failed to update schema version: $e\n";
+		croak "Failed to update schema version: $e";
 	}
 	$db->do("COMMIT TRANSACTION");
 }
@@ -93,7 +94,7 @@ sub run
 
 	# load all the files
 	opendir my $DH, $opts{dir}
-		or die "Failed to list $opts{dir}/: $!\n";
+		or croak "Failed to list $opts{dir}/: $!";
 
 	%STEPS = ();
 	while (readdir($DH)) {
@@ -111,15 +112,15 @@ sub run
 	my $current = version($db);
 	if (defined $current) {
 		# sanity check against current version
-		die "Database is at v$current; but migrations stop at v$last\n"
+		croak "Database is at v$current; but migrations stop at v$last"
 			if $current > $last;
 	} else {
 		$current = 0;
 		unless ($opts{noop}) {
 			$db->do("CREATE TABLE $INFO (version INTEGER);")
-				or die "Failed to create $INFO table: ".$db->errstr."\n";
+				or croak "Failed to create $INFO table: ".$db->errstr;
 			$db->do("INSERT INTO $INFO (version) VALUES (0);")
-				or die "Failed to set initial schema version: ".$db->errostr."\n";
+				or croak "Failed to set initial schema version: ".$db->errostr;
 		}
 	}
 	undef $last;
