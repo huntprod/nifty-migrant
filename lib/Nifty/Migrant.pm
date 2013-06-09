@@ -7,7 +7,7 @@ use Time::HiRes qw/gettimeofday/;
 use Exporter ();
 use base 'Exporter';
 our @EXPORT = qw/DEPLOY ROLLBACK/;
-our $VERSION = "1.1.1";
+our $VERSION = "1.1.2";
 
 my $INFO = "migrant_schema_info";
 my %STEPS = ();
@@ -84,6 +84,11 @@ sub vname
 	return "initial";
 }
 
+sub nsort
+{
+	sort { int($a) <=> int($b) } @_;
+}
+
 sub run
 {
 	my ($db, $want, %opts) = @_;
@@ -104,7 +109,7 @@ sub run
 	closedir $DH;
 
 	my $last = 0;
-	for (sort keys %STEPS) {
+	for (nsort keys %STEPS) {
 		$STEPS{$_}{last} = $last;
 		$last = $STEPS{$_}{this};
 	}
@@ -135,7 +140,7 @@ sub run
 	my $noop = ($opts{noop} ? "[NOOP] " : "");
 	print ":: migrate from ".vname($current)." to ".vname($want)."\n";
 	if (defined($want) and $current > $want) { # ROLLBACK!
-		for (reverse sort keys %STEPS) {
+		for (reverse nsort keys %STEPS) {
 			# skip the stuff we haven't deployed yet
 			next if $_ > $current;
 
@@ -154,7 +159,7 @@ sub run
 
 	} else { # DEPLOY!
 		my $n = 0;
-		for (sort keys %STEPS) {
+		for (nsort keys %STEPS) {
 			# skip the stuff we've already deployed
 			next if $_ <= $current;
 
@@ -324,6 +329,10 @@ parse_fname also handles full and relative path names:
 
 Returns a printable version string, treating '0' as "initial"
 and undef as "latest".  This is used for the diagnostic output.
+
+=head2 nsort(@vals)
+
+Sort and return a list of numeric values.
 
 =head2 register($num, $name, $deploy_sql, $rollback_sql)
 

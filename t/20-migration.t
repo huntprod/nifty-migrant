@@ -358,6 +358,21 @@ EOF
 		"run(2) fails due to bad SQL");
 }
 
+{ # db4 - lots of migrations (over 10!)
+  # tickled a string/integer sorting bug
+
+	qx(rm -rf t/tmp/db4; /bin/cp -a t/data/db4 t/tmp/db4);
+
+	my $DIR = "t/tmp/db4";
+	my $db = temp_db;
+	ok(!defined(Nifty::Migrant::version($db)),
+		"new database has undefined schema version");
+
+	eval_ok(sub { Nifty::Migrant::run($db, undef, dir => $DIR) },
+		"migrate to v12");
+	is(Nifty::Migrant::version($db), 12, "migrated to v12");
+}
+
 { # version against bad migrant_schema_info table
 	my $db = temp_db;
 	ok(!defined(Nifty::Migrant::version($db)),
