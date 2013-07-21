@@ -23,6 +23,7 @@ GetOptions(\%OPTIONS,
 	'config|c=s',
 	'project|p=s',
 	'env|e=s',
+	'batch|b',
 
 	'regen!',
 
@@ -163,6 +164,13 @@ SQL
 
 EOF
 	close $fh;
+	unless ($OPTIONS{batch}) {
+		system($ENV{EDITOR} || "/bin/vi", "$OPTIONS{dir}/$file");
+		exit 0 if $? == 0 && -s "$OPTIONS{dir}/$file" > 0;
+		unlink "$OPTIONS{dir}/$file";
+		print "Aborting new migration\n";
+		exit 1;
+	}
 	print "created $OPTIONS{dir}/$file\n";
 	exit 0;
 }
