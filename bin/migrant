@@ -58,6 +58,7 @@ sub regen
 	print ":: regen schema\n";
 	system("dbicdump -o dump_directory=./lib ".
 		"$config->{schema_class} $config->{dsn} ".
+		"-o skip_load_external=1 ".
 		"-o exclude='^migrant_schema_'");
 	print ":: regen complete\n\n";
 }

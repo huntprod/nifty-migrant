@@ -7,7 +7,7 @@ use Time::HiRes qw/gettimeofday/;
 use Exporter ();
 use base 'Exporter';
 our @EXPORT = qw/DEPLOY ROLLBACK/;
-our $VERSION = "1.1.3";
+our $VERSION = "1.1.4";
 
 my $INFO = "migrant_schema_info";
 my %STEPS = ();
