@@ -1,11 +1,11 @@
 package Nifty::Migrant::Config;
 
-use YAML;
+use Nifty::Config;
 
 sub read
 {
 	my ($class, $file) = @_;
-	my $config = eval { YAML::LoadFile($file) };
+	my $config = eval { read_config($file, chain => \"confdir") };
 	return unless $config and ref($config) eq 'HASH';
 	bless({
 			env    => 'development',
