@@ -12,7 +12,7 @@ use DBI;
 use Getopt::Long;
 
 our %OPTIONS = (
-	config  => '/etc/migrant.yml',
+	config  => '/etc/migrant.conf',
 	project => $ENV{MIGRANT_PROJECT} || 'DEVEL',
 	env     => $ENV{MIGRANT_ENV}     || 'development',
 );

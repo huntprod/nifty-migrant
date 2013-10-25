@@ -46,7 +46,7 @@ Nifty::Migrant::Config - Configuration Model for migrant
 =head1 DESCRIPTION
 
 The migrant utility reads in a global configuration file
-(usually, /etc/migrant.yml) that contains a set of named
+(usually, /etc/migrant.conf) that contains a set of named
 configuration trees.
 
 This Module provides the backend implementation for reading
