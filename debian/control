@@ -20,6 +20,7 @@ Description: Database Migration, all Rails-y
 Architecture: all
 Depends: libdbd-sqlite3-perl,
          libdbi-perl,
+         libnifty-config-perl,
          libyaml-libyaml-perl,
          perl,
          perl-modules,
