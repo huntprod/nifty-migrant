@@ -13,7 +13,6 @@ Build-Depends: debhelper (>= 8),
                libtest-simple-perl,
                libyaml-libyaml-perl,
                perl,
-               perl-base,
                perl-modules
 
 Package: libnifty-migrant-perl
@@ -23,5 +22,5 @@ Depends: libdbd-sqlite3-perl,
          libdbi-perl,
          libyaml-libyaml-perl,
          perl,
-         perl-base,
-         perl-modules
+         perl-modules,
+         ${misc:Depends}
