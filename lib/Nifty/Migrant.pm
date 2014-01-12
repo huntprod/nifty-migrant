@@ -7,7 +7,7 @@ use Time::HiRes qw/gettimeofday/;
 use Exporter ();
 use base 'Exporter';
 our @EXPORT = qw/DEPLOY ROLLBACK/;
-our $VERSION = "1.2.0";
+our $VERSION = "1.2.1";
 
 my $INFO = "migrant_schema_info";
 my %STEPS = ();
@@ -103,7 +103,8 @@ sub run
 
 	%STEPS = ();
 	while (readdir($DH)) {
-		next unless -f "$opts{dir}/$_" and m/\.pl/;
+		# files *must* be named DDD.*.pl; no exceptions
+		next unless -f "$opts{dir}/$_" and m/^\d+\..*\.pl$/;
 		do "$opts{dir}/$_";
 	}
 	closedir $DH;
