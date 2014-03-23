@@ -103,7 +103,7 @@ vprint "Connecting to $appdb->{dsn}\n";
 my $db = DBI->connect($appdb->{dsn},
 	$appdb->{user}, $appdb->{pass},
 	{ PrintWarn => 0, PrintError => 0 }) or
-		die "Failed to connect to $appdb->{dsn}\n";
+		die "Failed to connect to $appdb->{dsn}: $DBI::errstr\n";
 
 $cmd =~ m/^(version|deploy|rollback|redo|new)$/i
 	or pod2usage("Invalid command '$cmd'");
