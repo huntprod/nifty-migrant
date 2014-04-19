@@ -352,7 +352,7 @@ EOF
 	#### v1
 
 	eval_not_ok(sub { Nifty::Migrant::run($db, 2, dir => $DIR) },
-		qr/SQL 'CREAT TABLE .*: syntax error at $0 line \d+\n$/,
+		qr/SQL 'CREAT TABLE .*: syntax error at $0 line \d+.?\n$/,
 		"run(db, 2, %params)");
 	is(Nifty::Migrant::version($db), 1,
 		"run(2) fails due to bad SQL");
@@ -406,7 +406,7 @@ EOF
 	unlink "t/tmp/db1/004.skip.pl";
 
 	eval_not_ok(sub { Nifty::Migrant::run($db, 1, dir => $DIR) },
-		qr/^Database is at v4; but migrations stop at v2 at $0 line \d+$/,
+		qr/^Database is at v4; but migrations stop at v2 at $0 line \d+\.?\n?$/,
 		"rollback to v1 (which should fail)");
 	is(Nifty::Migrant::version($db), 4, "still at v4");
 }
