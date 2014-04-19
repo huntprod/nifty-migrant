@@ -318,7 +318,7 @@ EOF
 	#### v1
 
 	eval_not_ok(sub { Nifty::Migrant::run($db, 2, dir => $DIR) },
-		qr/no such table: migrant_schema_info at $0 line \d+\n$/,
+		qr/no such table: migrant_schema_info at $0 line \d+\.?\n$/,
 		"run(db, 2, %params)");
 	is(Nifty::Migrant::version($db), 1,
 		"run(2) fails by messing with migrant_schema_info");
@@ -352,7 +352,7 @@ EOF
 	#### v1
 
 	eval_not_ok(sub { Nifty::Migrant::run($db, 2, dir => $DIR) },
-		qr/SQL 'CREAT TABLE .*: syntax error at $0 line \d+.?\n$/,
+		qr/SQL 'CREAT TABLE .*: syntax error at $0 line \d+\.?\n$/,
 		"run(db, 2, %params)");
 	is(Nifty::Migrant::version($db), 1,
 		"run(2) fails due to bad SQL");
