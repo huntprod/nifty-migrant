@@ -49,8 +49,6 @@ TODO: {
     "placeholder date/time"       => qr(Date/time)
   );
 
-  module_boilerplate_ok('lib/Nifty/Migrant.pm');
-
-
 }
 
+module_boilerplate_ok('lib/Nifty/Migrant.pm');

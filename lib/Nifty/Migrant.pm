@@ -7,10 +7,21 @@ use Time::HiRes qw/gettimeofday/;
 use Exporter ();
 use base 'Exporter';
 our @EXPORT = qw/DEPLOY ROLLBACK/;
-our $VERSION = "1.2.1";
+our $VERSION = "1.3.0";
 
 my $INFO = "migrant_schema_info";
 my %STEPS = ();
+
+my $DBTYPE = '-';
+my @ERRMAC = ();
+my %MACROS = (
+	PRIMARY => {
+		pg     => 'SERIAL NOT NULL',
+		sqlite => 'INTEGER PRIMARY KEY NOT NULL',
+		mysql  => 'INTEGER PRIMARY KEY AUTO_INCREMENT',
+		'-'    => 'INTEGER PRIMARY KEY NOT NULL',
+	}
+);
 
 sub parse_fname
 {
@@ -30,6 +41,27 @@ sub register
 	} unless exists $STEPS{$number};
 	$STEPS{$number}{deploy} = $deploy if $deploy;
 	$STEPS{$number}{rollback} = $rollback if $rollback;
+}
+
+sub _macro
+{
+	my ($name) = @_;
+	if (!$MACROS{$name}) {
+		push @ERRMAC, "Unknown macro '**$name**'\n";
+		return '';
+	}
+	return $MACROS{$name}{$DBTYPE} if $MACROS{$name}{$DBTYPE};
+	return $MACROS{$name}{'-'}     if $MACROS{$name}{'-'};
+
+	push @ERRMAC, "Macro '**$name**' has no expansion for database engine '$DBTYPE'\n";
+	return "";
+}
+
+sub macro
+{
+	my ($sql) = @_;
+	$sql =~ s/\*\*([A-Z]+)\*\*/_macro("$1")/ge;
+	return $sql;
 }
 
 sub clock(&)
@@ -93,6 +125,7 @@ sub run
 {
 	my ($db, $want, %opts) = @_;
 	$opts{dir} = "db" unless $opts{dir};
+	$DBTYPE = lc($db->{Driver}{Name});
 
 	print STDERR "Running in NOOP mode... no database changes will be made\n"
 		if $opts{noop};
@@ -108,6 +141,12 @@ sub run
 		do "$opts{dir}/$_";
 	}
 	closedir $DH;
+
+	if (@ERRMAC) {
+		print STDERR "ERRORS encountered:\n";
+		print STDERR $_ for @ERRMAC;
+		exit 1;
+	}
 
 	my $last = 0;
 	for (nsort keys %STEPS) {
@@ -195,14 +234,14 @@ sub DEPLOY
 {
 	my ($sql) = @_;
 	(undef, my $file) = caller;
-	register(parse_fname($file), $sql, undef);
+	register(parse_fname($file), macro($sql), undef);
 }
 
 sub ROLLBACK
 {
 	my ($sql) = @_;
 	(undef, my $file) = caller;
-	register(parse_fname($file), undef, $sql);
+	register(parse_fname($file), undef, macro($sql));
 }
 
 1;
@@ -342,6 +381,11 @@ migration step.  This function rolls up the housekeeping
 necessary to populate the %STEPS hash appropriately.
 Subsequent calls will update an existing member of the STEPS
 hash.
+
+=head2 macro($sql)
+
+Resolve Migrant macros (like '@PRIMARY@') into database engine-
+specific snippets of code.
 
 =head2 clock(\&code)
 
