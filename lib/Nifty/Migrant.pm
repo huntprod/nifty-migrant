@@ -7,7 +7,7 @@ use Time::HiRes qw/gettimeofday/;
 use Exporter ();
 use base 'Exporter';
 our @EXPORT = qw/DEPLOY ROLLBACK/;
-our $VERSION = "1.3.1";
+our $VERSION = "1.3.0";
 
 my $INFO = "migrant_schema_info";
 my %STEPS = ();
@@ -16,7 +16,7 @@ my $DBTYPE = '-';
 my @ERRMAC = ();
 my %MACROS = (
 	PRIMARY => {
-		pg     => 'SERIAL NOT NULL UNIQUE',
+		pg     => 'SERIAL NOT NULL',
 		sqlite => 'INTEGER PRIMARY KEY NOT NULL',
 		mysql  => 'INTEGER PRIMARY KEY AUTO_INCREMENT',
 		'-'    => 'INTEGER PRIMARY KEY NOT NULL',
