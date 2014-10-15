@@ -56,8 +56,10 @@ sub regen
 {
 	my ($config) = @_;
 	print ":: regen schema\n";
+	my $creds = $config->{user} || "";
+	$creds .= " $config->{pass} " if $config->{user} && $config->{pass};
 	system("dbicdump -o dump_directory=./lib ".
-		"$config->{schema_class} $config->{dsn} ".
+		"$config->{schema_class} '$config->{dsn}' $creds".
 		"-o skip_load_external=1 ".
 		"-o exclude='^migrant_schema_'");
 	print ":: regen complete\n\n";
