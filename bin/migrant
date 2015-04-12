@@ -56,13 +56,24 @@ sub regen
 {
 	my ($config) = @_;
 	print ":: regen schema\n";
+	my $dbicdump_options = "";
+	if (-f ".dbicdump_options") {
+		open my $fh, ".dbicdump_options";
+		my @opts = <$fh>;
+		close $fh;
+		chomp $_ foreach @opts;
+		$dbicdump_options = join(" ", @opts);
+	}
 	my $creds = $config->{user} || "";
 	$creds .= " $config->{pass} " if $config->{user} && $config->{pass};
-	system("dbicdump -o dump_directory=./lib ".
+	my $dbicdump_cmd = ("dbicdump $dbicdump_options -o dump_directory=./lib ".
 		"$config->{schema_class} '$config->{dsn}' $creds".
+
 		"-o skip_load_external=1 ".
 		"-o exclude='^migrant_schema_'");
-	print ":: regen complete\n\n";
+	print "$dbicdump_cmd\n";
+	system $dbicdump_cmd;
+	print ":: regen complete\n\n" if $OPTIONS{verbose};
 }
 
 my $cmd = shift @ARGV
@@ -231,6 +242,10 @@ used.  If that is not set, defaults to I<development>.
 Regenerate the DBIx::Class schema, based on the Dancer configuration.  By
 default, the schema files will be regenerated for development environments.
 This behavior can be avoided with B<--no-regen>.
+
+If ./.dbicdump_options is present, B<migrant> will load this, appending each
+line as an argument to dbicdump. This is useful for overriding default
+dbicdump behavior, per project.
 
 =item B<-c>, B<--config> /path/to/config.yml
 
