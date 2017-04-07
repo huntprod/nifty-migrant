@@ -37,7 +37,7 @@ sub next_version
 	my ($dir) = @_;
 	my $v = 0;
 	opendir((my $dh), $dir);
-	while (readdir($dh)) {
+	while (local $_ = readdir($dh)) {
 		next unless -f "$dir/$_" and m/\.pl$/;
 		next unless m/^(\d+)/;
 		$v = $1 if $1 > $v;

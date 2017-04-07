@@ -102,7 +102,7 @@ sub run
 		or croak "Failed to list $opts{dir}/: $!";
 
 	%STEPS = ();
-	while (readdir($DH)) {
+	while (local $_ = readdir($DH)) {
 		# files *must* be named DDD.*.pl; no exceptions
 		next unless -f "$opts{dir}/$_" and m/^\d+\..*\.pl$/;
 		do "$opts{dir}/$_";
