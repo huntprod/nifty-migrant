@@ -43,7 +43,7 @@ sub clock(&)
 sub run_txn
 {
 	my ($db, $v, $sql) = @_;
-	$db->do("BEGIN TRANSACTION")
+	$db->do("BEGIN")
 		or croak "Failed to start transaction: ".$db->errstr;
 
 	for (split /;\n\s+/, $sql) {
@@ -51,7 +51,7 @@ sub run_txn
 		s/^\s*//; s/\s*$//;
 		if (!$db->do($_)) {
 			my $e = $db->errstr;
-			$db->do("ROLLBACK TRANSACTION");
+			$db->do("ROLLBACK");
 			croak "SQL '$_': $e";
 		}
 	}
@@ -59,10 +59,10 @@ sub run_txn
 	my $st = $db->prepare("UPDATE $INFO SET version = ?");
 	if (!$st or !$st->execute($v)) {
 		my $e = $db->errstr;
-		$db->do("ROLLBACK TRANSACTION");
+		$db->do("ROLLBACK");
 		croak "Failed to update schema version: $e";
 	}
-	$db->do("COMMIT TRANSACTION");
+	$db->do("COMMIT");
 }
 
 sub version
